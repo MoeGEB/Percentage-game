@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Percentage Game</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,'Helvetica Neue',Arial;}
+    body{margin:20px;background:#f4f7fb;color:#111}
+    h1{font-size:1.5rem;margin-bottom:6px;text-align:center;color:#333}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0;justify-content:center;align-items:center}
+    button{padding:6px 10px;border-radius:6px;border:1px solid #bbb;cursor:pointer;transition:0.2s}
+    button:hover:not(:disabled){transform:scale(1.05)}
+    button:disabled{opacity:.4;cursor:not-allowed}
+    .gm-btn{background:#e0f0ff;border-color:#88c}
+    .percent-btn{margin:2px;background:#fff;border-color:#ccc;width:54px;height:26px;font-size:0.8em}
+    .percent-btn.selected{background:#88f;color:white;border-color:#55c}
+    .assign-btn{margin:2px;background:#f8f8f8;border-color:#ccc;width:22px;height:22px;font-size:0.75em}
+    .assign-btn.selected{background:#3a7;color:white;border-color:#285}
+
+    .players-grid{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:6px;margin-top:16px;justify-content:center}
+    .player-card{flex:0 0 auto;width:11.5%;min-width:100px;background:white;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.1);padding:6px;display:flex;flex-direction:column;align-items:center}
+    .player-card h3{margin:0 0 6px;color:#333;font-size:0.9em}
+    .section{margin-bottom:6px;text-align:center;font-size:0.85em}
+    .percent-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:2px;justify-items:center}
+    .result-box{margin-top:4px;padding:2px 4px;background:#eef;border-radius:6px;font-size:0.75em;width:90%;text-align:center}
+
+    .history{max-height:280px;overflow:auto;border:1px solid #ddd;padding:8px;background:white;border-radius:8px}
+    .history table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:0.85em}
+    .history th, .history td{border:1px solid #e6e6e6;padding:6px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .history th{background:#fafafa}
+    .hidden{display:none}
+    .bold-number{font-weight:bold;}
+    .bottom-controls{display:flex;justify-content:center;gap:10px;margin-top:16px}
+  </style>
+</head>
+<body>
+  <h1>Percentage Game</h1>
+
+  <div class="controls">
+    <label for="numPlayers">Players:</label>
+    <input type="number" id="numPlayers" min="2" max="8" value="6" style="width:50px;padding:4px">
+    <button id="setPlayersBtn" class="gm-btn">Set Players</button>
+    <button id="calculateBtn" class="gm-btn">Calculate round</button>
+    <button id="resetBtn" class="gm-btn">Reset game</button>
+    <div style="margin-left:12px">Round: <span id="roundNum">0</span> / 8</div>
+  </div>
+
+  <div class="players-grid" id="playersGrid"></div>
+
+  <div class="bottom-controls">
+    <button id="clearHistoryBtn" class="gm-btn">Clear history</button>
+    <button id="downloadHistoryBtn" class="gm-btn">Download history (CSV)</button>
+    <button id="revealHistoryBtn" class="gm-btn">Toggle history</button>
+  </div>
+
+  <div class="history-panel hidden" id="historyPanel">
+    <h3 style="text-align:center">History (all rounds)</h3>
+    <div class="history" id="historyList"></div>
+  </div>
+
+  <script>
+    const percentOptions = [0, 25, 50, 75, 100];
+    const assignOptions = [1, 2, 3, 4];
+    
+    let numPlayers = 6;
+    let currentRound = 0;
+    let players = [];
+    let history = [];
+
+    function initGame() {
+      numPlayers = parseInt(document.getElementById('numPlayers').value);
+      players = [];
+      for (let i = 0; i < numPlayers; i++) {
+        players.push({
+          id: i,
+          name: `P${i + 1}`,
+          percentChoice: null,
+          assignChoice: null,
+          score: 0
+        });
+      }
+      currentRound = 0;
+      document.getElementById('roundNum').textContent = currentRound;
+      renderPlayers();
+    }
+
+    function renderPlayers() {
+      const grid = document.getElementById('playersGrid');
+      grid.innerHTML = '';
+      
+      players.forEach(p => {
+        const card = document.createElement('div');
+        card.className = 'player-card';
+        
+        let html = `<h3>${p.name}</h3>`;
+        
+        html += `<div class="section"><strong>Percentage:</strong><div class="percent-grid">`;
+        percentOptions.forEach(val => {
+          const sel = p.percentChoice === val ? 'selected' : '';
+          html += `<button class="percent-btn ${sel}" data-player="${p.id}" data-percent="${val}">${val}%</button>`;
+        });
+        html += `</div></div>`;
+        
+        html += `<div class="section"><strong>Assign:</strong><div class="percent-grid">`;
+        assignOptions.forEach(val => {
+          const sel = p.assignChoice === val ? 'selected' : '';
+          html += `<button class="assign-btn ${sel}" data-player="${p.id}" data-assign="${val}">${val}</button>`;
+        });
+        html += `</div></div>`;
+        
+        html += `<div class="result-box">Score: <span class="bold-number">${p.score}</span></div>`;
+        
+        card.innerHTML = html;
+        grid.appendChild(card);
+      });
+      
+      attachButtonListeners();
+    }
+
+    function attachButtonListeners() {
+      document.querySelectorAll('.percent-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const pid = parseInt(btn.dataset.player);
+          const val = parseInt(btn.dataset.percent);
+          players[pid].percentChoice = val;
+          renderPlayers();
+        });
+      });
+      
+      document.querySelectorAll('.assign-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const pid = parseInt(btn.dataset.player);
+          const val = parseInt(btn.dataset.assign);
+          players[pid].assignChoice = val;
+          renderPlayers();
+        });
+      });
+    }
+
+    function calculateRound() {
+      const allChosen = players.every(p => p.percentChoice !== null && p.assignChoice !== null);
+      if (!allChosen) {
+        alert('All players must select both percentage and assignment!');
+        return;
+      }
+
+      currentRound++;
+      document.getElementById('roundNum').textContent = currentRound;
+
+      const roundData = { round: currentRound, results: [] };
+
+      players.forEach(p => {
+        const targetPlayer = players[p.assignChoice - 1];
+        if (!targetPlayer) return;
+        
+        const targetPercent = targetPlayer.percentChoice;
+        const myPercent = p.percentChoice;
+        
+        let points = 0;
+        const diff = Math.abs(targetPercent - myPercent);
+        
+        if (diff === 0) points = 100;
+        else if (diff === 25) points = 50;
+        else if (diff === 50) points = 25;
+        else if (diff === 75) points = 10;
+        else if (diff === 100) points = 0;
+        
+        p.score += points;
+        
+        roundData.results.push({
+          player: p.name,
+          percent: myPercent,
+          assign: p.assignChoice,
+          target: targetPlayer.name,
+          targetPercent: targetPercent,
+          diff: diff,
+          points: points,
+          totalScore: p.score
+        });
+      });
+
+      history.push(roundData);
+      
+      players.forEach(p => {
+        p.percentChoice = null;
+        p.assignChoice = null;
+      });
+      
+      renderPlayers();
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const panel = document.getElementById('historyList');
+      if (history.length === 0) {
+        panel.innerHTML = '<p style="text-align:center">No rounds played yet</p>';
+        return;
+      }
+      
+      let table = '<table><thead><tr><th>Rd</th><th>Player</th><th>%</th><th>→</th><th>Target</th><th>T%</th><th>Diff</th><th>Pts</th><th>Total</th></tr></thead><tbody>';
+      
+      history.forEach(rd => {
+        rd.results.forEach(r => {
+          table += `<tr>
+            <td>${rd.round}</td>
+            <td>${r.player}</td>
+            <td>${r.percent}%</td>
+            <td>${r.assign}</td>
+            <td>${r.target}</td>
+            <td>${r.targetPercent}%</td>
+            <td>${r.diff}</td>
+            <td class="bold-number">${r.points}</td>
+            <td class="bold-number">${r.totalScore}</td>
+          </tr>`;
+        });
+      });
+      
+      table += '</tbody></table>';
+      panel.innerHTML = table;
+    }
+
+    function resetGame() {
+      if (currentRound > 0 && !confirm('Reset the entire game? This will clear all scores.')) return;
+      initGame();
+      renderPlayers();
+    }
+
+    function clearHistory() {
+      if (!confirm('Clear all history? Scores will remain.')) return;
+      history = [];
+      renderHistory();
+    }
+
+    function downloadCSV() {
+      if (history.length === 0) {
+        alert('No history to download');
+        return;
+      }
+      
+      let csv = 'Round,Player,Percent,Assign,Target,TargetPercent,Diff,Points,TotalScore\n';
+      history.forEach(rd => {
+        rd.results.forEach(r => {
+          csv += `${rd.round},${r.player},${r.percent},${r.assign},${r.target},${r.targetPercent},${r.diff},${r.points},${r.totalScore}\n`;
+        });
+      });
+      
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'percentage_game_history.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function toggleHistory() {
+      const panel = document.getElementById('historyPanel');
+      panel.classList.toggle('hidden');
+    }
+
+    document.getElementById('setPlayersBtn').addEventListener('click', initGame);
+    document.getElementById('calculateBtn').addEventListener('click', calculateRound);
+    document.getElementById('resetBtn').addEventListener('click', resetGame);
+    document.getElementById('clearHistoryBtn').addEventListener('click', clearHistory);
+    document.getElementById('downloadHistoryBtn').addEventListener('click', downloadCSV);
+    document.getElementById('revealHistoryBtn').addEventListener('click', toggleHistory);
+
+    initGame();
+  </script>
+</body>
+</html>
